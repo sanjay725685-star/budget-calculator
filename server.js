@@ -1,7 +1,7 @@
 /**
  * ============================================================
- * PERSONAL BUDGET CALCULATOR — server.js  v2.0
- * Backend: Node.js + Express + sql.js (pure-JS SQLite)
+ * PERSONAL BUDGET CALCULATOR — server.js  v2.1
+ * Works both locally AND on Vercel serverless
  * ============================================================
  */
 
@@ -12,34 +12,34 @@ const cors    = require('cors');
 const path    = require('path');
 const fs      = require('fs');
 
-/* ---------- App Setup ---------- */
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname)); // Serves index.html, style.css, script.js
+app.use(express.static(__dirname));
 
 /* ==========================================================
-   SQL.JS — Pure JavaScript SQLite (no native build needed)
+   DATABASE SETUP — sql.js (Pure JS SQLite)
+   On Vercel: uses /tmp (writable temp folder)
+   Locally:   uses ./database/budget.db (persistent)
    ========================================================== */
 
-const DB_DIR  = path.join(__dirname, 'database');
-const DB_FILE = path.join(DB_DIR, 'budget.db');
+// Vercel ke liye /tmp use karo, locally database/ folder
+const IS_VERCEL = process.env.VERCEL === '1';
+const DB_DIR    = IS_VERCEL ? '/tmp' : path.join(__dirname, 'database');
+const DB_FILE   = path.join(DB_DIR, 'budget.db');
 
-if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR);
+if (!IS_VERCEL && !fs.existsSync(DB_DIR)) {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+}
 
-let db; // Will hold the sql.js Database instance
+let db;
 
-/**
- * Initialize sql.js and load (or create) the database file.
- * sql.js loads the .wasm file asynchronously, so we wrap in async.
- */
 async function initDatabase() {
   const initSqlJs = require('sql.js');
   const SQL = await initSqlJs();
 
-  // Load existing DB file from disk if it exists, else create new
   if (fs.existsSync(DB_FILE)) {
     const fileBuffer = fs.readFileSync(DB_FILE);
     db = new SQL.Database(fileBuffer);
@@ -47,7 +47,6 @@ async function initDatabase() {
     db = new SQL.Database();
   }
 
-  // Create table if not exists
   db.run(`
     CREATE TABLE IF NOT EXISTS budgets (
       id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,44 +71,42 @@ async function initDatabase() {
     )
   `);
 
-  persistDB(); // Save initial file
-  console.log('✅ sql.js database ready →', DB_FILE);
+  persistDB();
+  console.log(`✅ sql.js database ready → ${DB_FILE}`);
 }
 
-/** Save in-memory DB back to the .db file on disk */
 function persistDB() {
-  const data = db.export();
-  fs.writeFileSync(DB_FILE, Buffer.from(data));
+  try {
+    const data = db.export();
+    fs.writeFileSync(DB_FILE, Buffer.from(data));
+  } catch (e) {
+    console.warn('DB persist warning:', e.message);
+  }
 }
 
-/** Run a query that returns rows (SELECT) */
 function dbQuery(sql, params = []) {
   const stmt    = db.prepare(sql);
   const results = [];
   stmt.bind(params);
-  while (stmt.step()) {
-    results.push(stmt.getAsObject());
-  }
+  while (stmt.step()) results.push(stmt.getAsObject());
   stmt.free();
   return results;
 }
 
-/** Run a query that modifies data (INSERT/UPDATE/DELETE) */
 function dbRun(sql, params = []) {
   db.run(sql, params);
-  persistDB(); // Flush to disk after every write
-  // Return last inserted rowid
+  persistDB();
   const row = dbQuery('SELECT last_insert_rowid() as id');
   return row[0] ? row[0].id : null;
 }
 
-/* ---------- Multer Setup ---------- */
+/* ---------- Multer ---------- */
 const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    ['.xlsx','.xls','.csv'].includes(ext) ? cb(null, true) : cb(new Error('Only .xlsx, .xls, .csv files allowed.'));
+    ['.xlsx','.xls','.csv'].includes(ext) ? cb(null, true) : cb(new Error('Only .xlsx, .xls, .csv allowed.'));
   }
 });
 
@@ -117,7 +114,6 @@ const upload = multer({
    API ROUTES
    ========================================================== */
 
-/* GET /api/budgets — All records */
 app.get('/api/budgets', (req, res) => {
   try {
     const rows = dbQuery(`
@@ -132,7 +128,6 @@ app.get('/api/budgets', (req, res) => {
   }
 });
 
-/* GET /api/budget/:id — Single record with full detail */
 app.get('/api/budget/:id', (req, res) => {
   try {
     const rows = dbQuery('SELECT * FROM budgets WHERE id = ?', [req.params.id]);
@@ -147,7 +142,6 @@ app.get('/api/budget/:id', (req, res) => {
   }
 });
 
-/* POST /api/budget — Save new record */
 app.post('/api/budget', (req, res) => {
   try {
     const d = req.body;
@@ -161,33 +155,24 @@ app.post('/api/budget', (req, res) => {
          income_rows, expense_rows, savings_rows)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        d.entry_type || 'manual',
-        d.user_name,
-        d.age           || null,
-        d.occupation    || '',
-        d.family_members  || null,
-        d.earning_members || null,
-        d.other_family_income  || 0,
-        d.total_income         || 0,
-        d.total_expenses       || 0,
-        d.monthly_savings      || 0,
-        d.savings_rate         || 0,
-        d.expense_ratio        || 0,
-        d.total_current_savings || 0,
-        d.assessment   || '',
+        d.entry_type || 'manual', d.user_name,
+        d.age || null, d.occupation || '',
+        d.family_members || null, d.earning_members || null,
+        d.other_family_income || 0, d.total_income || 0,
+        d.total_expenses || 0, d.monthly_savings || 0,
+        d.savings_rate || 0, d.expense_ratio || 0,
+        d.total_current_savings || 0, d.assessment || '',
         JSON.stringify(d.income_rows  || []),
         JSON.stringify(d.expense_rows || []),
         JSON.stringify(d.savings_rows || []),
       ]
     );
-
     res.json({ success: true, id, message: 'Budget record saved successfully!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-/* DELETE /api/budget/:id — Delete a record */
 app.delete('/api/budget/:id', (req, res) => {
   try {
     const before = dbQuery('SELECT id FROM budgets WHERE id = ?', [req.params.id]);
@@ -199,21 +184,17 @@ app.delete('/api/budget/:id', (req, res) => {
   }
 });
 
-/* POST /api/import-excel — Upload and parse Excel/CSV file */
 app.post('/api/import-excel', upload.single('excelFile'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded.' });
 
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const incomeRows = [], expenseRows = [], savingsRows = [];
 
-    const incomeRows  = [];
-    const expenseRows = [];
-    const savingsRows = [];
-
-    const MONTHS           = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const incomeKeywords   = ['salary','income','wage','freelanc','allowance','dividend','rental','interest','revenue','earning'];
-    const expenseKeywords  = ['rent','housing','food','grocer','transport','fuel','education','electric','mobile','internet','medical','health','shop','entertain','insurance','emi','loan','expense','bill'];
-    const savingsKeywords  = ['saving','invest','fd','rd','ppf','mutual','fund','stock','gold','cash','deposit','sip'];
+    const MONTHS          = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const incomeKeywords  = ['salary','income','wage','freelanc','allowance','dividend','rental','interest','revenue','earning'];
+    const expenseKeywords = ['rent','housing','food','grocer','transport','fuel','education','electric','mobile','internet','medical','health','shop','entertain','insurance','emi','loan','expense','bill'];
+    const savingsKeywords = ['saving','invest','fd','rd','ppf','mutual','fund','stock','gold','cash','deposit','sip'];
 
     workbook.SheetNames.forEach(sheetName => {
       const sheet = workbook.Sheets[sheetName];
@@ -229,7 +210,7 @@ app.post('/api/import-excel', upload.single('excelFile'), (req, res) => {
           headerRow = ri;
           row.forEach((cell, ci) => {
             if (MONTHS.includes(cell)) monthCols[cell] = ci;
-            if (cell === 'type')     typeCol = ci;
+            if (cell === 'type') typeCol = ci;
             if (['category','source','description','item'].includes(cell)) catCol = ci;
           });
           break;
@@ -241,16 +222,13 @@ app.post('/api/import-excel', upload.single('excelFile'), (req, res) => {
         const row = rows[ri];
         if (!row || row.every(c => c === '' || c === null)) continue;
 
-        const cat = catCol >= 0 ? String(row[catCol]||'').trim() : String(row[1]||row[0]||'').trim();
+        const cat    = catCol >= 0 ? String(row[catCol]||'').trim() : String(row[1]||row[0]||'').trim();
         if (!cat) continue;
-
         const catLow = cat.toLowerCase();
         if (['total','subtotal','sub-total','summary','grand total'].some(s => catLow.includes(s))) continue;
 
-        // Average of month column values
         const monthVals = Object.values(monthCols).map(ci => parseFloat(row[ci])||0).filter(v => v > 0);
-        let avg = monthVals.length ? monthVals.reduce((a,b)=>a+b,0)/monthVals.length : 0;
-
+        let avg = monthVals.length ? monthVals.reduce((a,b) => a+b, 0) / monthVals.length : 0;
         if (!avg) {
           for (let ci = 2; ci < row.length; ci++) {
             const v = parseFloat(row[ci]);
@@ -260,16 +238,16 @@ app.post('/api/import-excel', upload.single('excelFile'), (req, res) => {
 
         let type = typeCol >= 0 ? String(row[typeCol]||'').toLowerCase().trim() : '';
         if (!type || type === 'type') {
-          if (incomeKeywords.some(k  => catLow.includes(k))) type = 'income';
+          if (incomeKeywords.some(k  => catLow.includes(k)))  type = 'income';
           else if (savingsKeywords.some(k => catLow.includes(k))) type = 'savings';
           else if (expenseKeywords.some(k => catLow.includes(k))) type = 'expense';
           else type = 'expense';
         }
 
         const entry = { source: cat, amount: Math.round(avg).toString() };
-        if (type.includes('income'))                          incomeRows.push(entry);
-        else if (type.includes('sav')||type.includes('inv')) savingsRows.push(entry);
-        else                                                  expenseRows.push(entry);
+        if (type.includes('income'))                             incomeRows.push(entry);
+        else if (type.includes('sav') || type.includes('inv'))  savingsRows.push(entry);
+        else                                                     expenseRows.push(entry);
       }
     });
 
@@ -279,12 +257,10 @@ app.post('/api/import-excel', upload.single('excelFile'), (req, res) => {
       incomeRows, expenseRows, savingsRows,
     });
   } catch (err) {
-    console.error('Excel parse error:', err);
     res.status(500).json({ success: false, error: 'Failed to parse file: ' + err.message });
   }
 });
 
-/* GET /api/export-excel/:id — Download record as .xlsx */
 app.get('/api/export-excel/:id', (req, res) => {
   try {
     const rows = dbQuery('SELECT * FROM budgets WHERE id = ?', [req.params.id]);
@@ -296,13 +272,9 @@ app.get('/api/export-excel/:id', (req, res) => {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['PERSONAL BUDGET SUMMARY'],
-      ['Generated:', r.created_at],
-      ['Entry Type:', r.entry_type],
-      [''],
+      ['PERSONAL BUDGET SUMMARY'], ['Generated:', r.created_at], ['Entry Type:', r.entry_type], [''],
       ['Name:', r.user_name], ['Age:', r.age], ['Occupation:', r.occupation],
-      ['Family Members:', r.family_members], ['Earning Members:', r.earning_members],
-      [''],
+      ['Family Members:', r.family_members], ['Earning Members:', r.earning_members], [''],
       ['FINANCIAL SUMMARY'],
       ['Total Monthly Income',  `₹${r.total_income}`],
       ['Total Monthly Expenses',`₹${r.total_expenses}`],
@@ -312,18 +284,17 @@ app.get('/api/export-excel/:id', (req, res) => {
       ['Expense Ratio', `${Number(r.expense_ratio).toFixed(1)}%`],
       ['Assessment', r.assessment],
     ]), 'Summary');
-
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      [['Income Source','Monthly Amount (₹)'], ...incRows.map(x=>[x.source,x.amount])]
+      [['Income Source','Monthly Amount (₹)'], ...incRows.map(x => [x.source, x.amount])]
     ), 'Income');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      [['Expense Category','Monthly Amount (₹)'], ...expRows.map(x=>[x.source,x.amount])]
+      [['Expense Category','Monthly Amount (₹)'], ...expRows.map(x => [x.source, x.amount])]
     ), 'Expenses');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(
-      [['Savings Source','Current Amount (₹)'], ...savRows.map(x=>[x.source,x.amount])]
+      [['Savings Source','Current Amount (₹)'], ...savRows.map(x => [x.source, x.amount])]
     ), 'Savings');
 
-    const buf = XLSX.write(wb, { bookType:'xlsx', type:'buffer' });
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
     res.setHeader('Content-Disposition', `attachment; filename="Budget_${r.user_name}_${r.id}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
@@ -333,14 +304,19 @@ app.get('/api/export-excel/:id', (req, res) => {
 });
 
 /* ==========================================================
-   START SERVER (after DB is ready)
+   START — Works locally AND on Vercel
    ========================================================== */
 initDatabase().then(() => {
-  app.listen(PORT, () => {
-    console.log(`\n🚀 Personal Budget Calculator Server`);
-    console.log(`   Open → http://localhost:${PORT}\n`);
-  });
+  if (!IS_VERCEL) {
+    // Local: start Express server normally
+    app.listen(PORT, () => {
+      console.log(`\n🚀 Personal Budget Calculator Server`);
+      console.log(`   Open → http://localhost:${PORT}\n`);
+    });
+  }
 }).catch(err => {
-  console.error('❌ Failed to initialize database:', err);
-  process.exit(1);
+  console.error('❌ Database init failed:', err);
 });
+
+// Vercel ke liye app export karna zaroori hai
+module.exports = app;
