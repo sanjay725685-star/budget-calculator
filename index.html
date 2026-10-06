@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Personal Budget Calculator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ========== APP HEADER ========== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-logo">
+        <span class="logo-icon">₹</span>
+        <div>
+          <h1>Personal Budget Calculator</h1>
+          <p>Plan your finances. Track your goals.</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-outline-white" id="btnRecords" onclick="openRecordsModal()">📋 All Records</button>
+        <button class="btn btn-outline-white" id="btnReset" title="Reset all data">↺ Reset</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== PROGRESS BAR ========== -->
+  <div class="progress-wrapper">
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progressBar"></div>
+    </div>
+    <div class="progress-steps" id="progressSteps">
+      <div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">Personal</span></div>
+      <div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">Income</span></div>
+      <div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Expenses</span></div>
+      <div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Savings</span></div>
+      <div class="step" data-step="5"><span class="step-num">5</span><span class="step-label">Summary</span></div>
+    </div>
+  </div>
+
+  <!-- ========== EXCEL IMPORT BANNER (shows on Step 2) ========== -->
+  <div class="excel-banner" id="excelBanner" style="display:none;">
+    <div class="excel-banner-inner">
+      <span>📊 <strong>Quick Import:</strong> Have an Excel file? Auto-fill all income, expenses & savings in one click.</span>
+      <label class="btn btn-excel-sm" for="excelFileInput" title="Upload .xlsx or .csv">
+        📂 Upload Excel / CSV
+      </label>
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelUpload(this)" />
+    </div>
+  </div>
+
+  <!-- ========== MAIN CONTENT ========== -->
+  <main class="app-main">
+
+    <!-- ===== SECTION 1: DEMOGRAPHIC DETAILS ===== -->
+    <section class="form-section active" id="section1">
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-icon">👤</div>
+          <div>
+            <h2 class="section-title">Demographic Details</h2>
+            <p class="section-subtitle">Tell us about yourself to get started</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="userName">User Name <span class="required">*</span></label>
+            <input type="text" id="userName" placeholder="Enter your full name" />
+            <span class="error-msg" id="err-userName"></span>
+          </div>
+          <div class="form-group">
+            <label for="userAge">Age <span class="required">*</span></label>
+            <input type="number" id="userAge" placeholder="Enter your age" min="1" max="120" />
+            <span class="error-msg" id="err-userAge"></span>
+          </div>
+          <div class="form-group">
+            <label for="occupation">Occupation <span class="required">*</span></label>
+            <select id="occupation">
+              <option value="">Select Occupation</option>
+              <option value="Business">Business</option>
+              <option value="Private Sector">Private Sector</option>
+              <option value="Public Sector">Public Sector</option>
+              <option value="Others">Others</option>
+            </select>
+            <span class="error-msg" id="err-occupation"></span>
+          </div>
+          <div class="form-group">
+            <label for="familyMembers">No. of Family Members <span class="required">*</span></label>
+            <input type="number" id="familyMembers" placeholder="e.g. 4" min="1" step="1" />
+            <span class="error-msg" id="err-familyMembers"></span>
+          </div>
+          <div class="form-group">
+            <label for="earningMembers">No. of Earning Members <span class="required">*</span></label>
+            <input type="number" id="earningMembers" placeholder="e.g. 2" min="1" step="1" />
+            <span class="error-msg" id="err-earningMembers"></span>
+          </div>
+          <div class="form-group">
+            <label for="otherFamilyIncome">Income From Other Family Members</label>
+            <div class="input-currency-wrap">
+              <span class="currency-prefix">₹</span>
+              <input type="number" id="otherFamilyIncome" placeholder="Enter monthly income" min="0" value="0" />
+            </div>
+            <span class="field-hint">Enter 0 if none</span>
+            <span class="error-msg" id="err-otherFamilyIncome"></span>
+          </div>
+        </div>
+        <div class="section-nav">
+          <div></div>
+          <button class="btn btn-primary" onclick="nextSection(1)">Next →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SECTION 2: INCOME DETAILS ===== -->
+    <section class="form-section" id="section2">
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-icon">💰</div>
+          <div>
+            <h2 class="section-title">Income Details</h2>
+            <p class="section-subtitle">Enter all monthly income sources</p>
+          </div>
+        </div>
+        <div id="incomeRowsContainer"></div>
+        <div class="add-row-bar">
+          <button class="btn btn-add" onclick="addIncomeRow()">+ Add Income Source</button>
+        </div>
+        <div class="totals-box">
+          <div class="totals-row"><span>Primary &amp; Other Sources</span><span id="primaryIncomeDisplay">₹0</span></div>
+          <div class="totals-row"><span>Other Family Members' Income</span><span id="otherFamilyIncomeDisplay">₹0</span></div>
+          <div class="totals-row total-highlight"><span>Total Monthly Income</span><span id="totalIncomeDisplay">₹0</span></div>
+        </div>
+        <div class="section-nav">
+          <button class="btn btn-outline" onclick="prevSection(2)">← Back</button>
+          <button class="btn btn-primary" onclick="nextSection(2)">Next →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SECTION 3: EXPENSE DETAILS ===== -->
+    <section class="form-section" id="section3">
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-icon">🧾</div>
+          <div>
+            <h2 class="section-title">Expense Details</h2>
+            <p class="section-subtitle">List all monthly expenses</p>
+          </div>
+        </div>
+        <div id="expenseRowsContainer"></div>
+        <div class="add-row-bar">
+          <button class="btn btn-add" onclick="addExpenseRow()">+ Add Expense</button>
+        </div>
+        <div class="totals-box">
+          <div class="totals-row total-highlight"><span>Total Monthly Expenses</span><span id="totalExpenseDisplay">₹0</span></div>
+        </div>
+        <div class="section-nav">
+          <button class="btn btn-outline" onclick="prevSection(3)">← Back</button>
+          <button class="btn btn-primary" onclick="nextSection(3)">Next →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SECTION 4: SAVINGS & INVESTMENTS ===== -->
+    <section class="form-section" id="section4">
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-icon">🏦</div>
+          <div>
+            <h2 class="section-title">Current Savings &amp; Investments</h2>
+            <p class="section-subtitle">What you currently have saved or invested</p>
+          </div>
+        </div>
+        <div id="savingsRowsContainer"></div>
+        <div class="add-row-bar">
+          <button class="btn btn-add" onclick="addSavingsRow()">+ Add Savings Source</button>
+        </div>
+        <div class="totals-box">
+          <div class="totals-row total-highlight"><span>Total Current Savings &amp; Investments</span><span id="totalSavingsDisplay">₹0</span></div>
+        </div>
+        <div class="section-nav">
+          <button class="btn btn-outline" onclick="prevSection(4)">← Back</button>
+          <button class="btn btn-primary" onclick="calculateBudget()">Calculate Budget 📊</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SECTION 5: BUDGET SUMMARY + ASSESSMENT ===== -->
+    <section class="form-section" id="section5">
+
+      <!-- Summary Dashboard -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-icon">📊</div>
+          <div>
+            <h2 class="section-title">Budget Summary</h2>
+            <p class="section-subtitle" id="summarySubtitle">Here's a snapshot of your finances</p>
+          </div>
+          <!-- Save to DB button -->
+          <button class="btn btn-success" id="btnSaveRecord" onclick="saveRecordToDB()" style="margin-left:auto;">
+            💾 Save Record
+          </button>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card income-kpi"><div class="kpi-label">Total Monthly Income</div><div class="kpi-value" id="kpi-income">₹0</div></div>
+          <div class="kpi-card expense-kpi"><div class="kpi-label">Total Monthly Expenses</div><div class="kpi-value" id="kpi-expense">₹0</div></div>
+          <div class="kpi-card savings-kpi"><div class="kpi-label">Monthly Savings</div><div class="kpi-value" id="kpi-savings">₹0</div></div>
+          <div class="kpi-card investment-kpi"><div class="kpi-label">Total Current Savings &amp; Investments</div><div class="kpi-value" id="kpi-investments">₹0</div></div>
+          <div class="kpi-card rate-kpi"><div class="kpi-label">Savings Rate</div><div class="kpi-value" id="kpi-savingsRate">0%</div></div>
+          <div class="kpi-card ratio-kpi"><div class="kpi-label">Expense-to-Income Ratio</div><div class="kpi-value" id="kpi-expenseRatio">0%</div></div>
+        </div>
+
+        <div class="budget-bar-section">
+          <div class="budget-bar-labels"><span>Expenses</span><span>Savings</span></div>
+          <div class="budget-bar-track">
+            <div class="budget-bar-expense" id="barExpense"></div>
+            <div class="budget-bar-savings" id="barSavings"></div>
+          </div>
+          <div class="budget-bar-percents">
+            <span id="barExpensePct">0%</span><span id="barSavingsPct">0%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Assessment -->
+      <div class="section-card assessment-card" id="assessmentCard">
+        <div class="section-header">
+          <div class="section-icon" id="assessmentIcon">💡</div>
+          <div>
+            <h2 class="section-title">Budget Assessment</h2>
+            <p class="section-subtitle">Based on your entered financial data</p>
+          </div>
+        </div>
+        <div class="assessment-result" id="assessmentResult">
+          <div class="assessment-badge" id="assessmentBadge">—</div>
+          <p class="assessment-explanation" id="assessmentExplanation"></p>
+        </div>
+        <div class="assessment-tips" id="assessmentTips"></div>
+      </div>
+
+      <div class="section-nav" style="padding:0 0 1rem 0;">
+        <button class="btn btn-outline" onclick="prevSection(5)">← Back</button>
+        <button class="btn btn-outline" onclick="window.print()">🖨️ Print</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="app-footer">
+    <p>Personal Budget Calculator &mdash; Data saved to local server database.</p>
+  </footer>
+
+  <!-- ========== RESET MODAL ========== -->
+  <div class="modal-overlay" id="resetModal">
+    <div class="modal-box">
+      <h3>Reset All Data?</h3>
+      <p>This will clear all entered information and start fresh. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeResetModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmReset()">Yes, Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== RECORDS MODAL ========== -->
+  <div class="modal-overlay" id="recordsModal">
+    <div class="modal-box modal-wide">
+      <div class="modal-header">
+        <h3>📋 All Budget Records</h3>
+        <button class="btn-icon-close" onclick="closeRecordsModal()">✕</button>
+      </div>
+      <div id="recordsContent">
+        <p style="color:#9ca3af; text-align:center; padding:2rem;">Loading records...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== RECORD DETAIL MODAL ========== -->
+  <div class="modal-overlay" id="recordDetailModal">
+    <div class="modal-box modal-wide">
+      <div class="modal-header">
+        <h3 id="recordDetailTitle">Record Details</h3>
+        <button class="btn-icon-close" onclick="document.getElementById('recordDetailModal').classList.remove('open')">✕</button>
+      </div>
+      <div id="recordDetailContent"></div>
+    </div>
+  </div>
+
+  <!-- ========== TOAST NOTIFICATION ========== -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ========== EXCEL UPLOAD LOADING OVERLAY ========== -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <p id="loadingText">Parsing Excel file...</p>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

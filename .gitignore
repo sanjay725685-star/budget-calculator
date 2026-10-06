@@ -1,0 +1,16 @@
+# Node.js dependencies
+node_modules/
+
+# Database file (don't push — regenerates automatically)
+database/budget.db
+
+# npm logs
+npm-debug.log*
+package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
